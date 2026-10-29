@@ -55,6 +55,8 @@ function registerProtocol() {
 
 // ---------- window ----------
 
+const IS_MAC = process.platform === 'darwin';
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1500,
@@ -63,8 +65,11 @@ function createWindow() {
     minHeight: 640,
     title: 'Blobby',
     backgroundColor: '#191919',
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 14, y: 14 },
+    // The tab bar is the title bar. macOS keeps its traffic lights; Windows and Linux get native
+    // minimize / maximize / close buttons drawn over the right end of the tab bar.
+    ...(IS_MAC
+      ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 14, y: 14 } }
+      : { titleBarStyle: 'hidden', titleBarOverlay: { color: '#191919', symbolColor: '#f2f2f2', height: 42 } }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -94,7 +99,7 @@ function watchStore() {
   let pending = new Set();
   let timer = null;
   fs.watch(store.ROOT, { recursive: true }, (_event, rel) => {
-    if (!rel || rel.includes('.history') || rel.startsWith('.bridge') || rel.startsWith('_exports')) return;
+    if (!rel || rel.includes('.history') || rel.startsWith('.bridge') || rel.startsWith('.app-data') || rel.startsWith('_exports')) return;
     const norm = rel.split(path.sep).join('/');
     pending.add(norm);
     const m = norm.match(/^([^/]+)\/pages\/([^/]+)\.html$/);
@@ -303,6 +308,13 @@ function connectDesktop() {
 }
 
 function findClaudeCli() {
+  if (process.platform === 'win32') {
+    const win = [
+      path.join(os.homedir(), '.local', 'bin', 'claude.exe'),
+      path.join(process.env.APPDATA || '', 'npm', 'claude.cmd'),
+    ];
+    return win.find((c) => fs.existsSync(c)) || 'claude';
+  }
   const candidates = [
     path.join(os.homedir(), '.local', 'bin', 'claude'),
     path.join(os.homedir(), '.claude', 'local', 'claude'),
@@ -315,7 +327,11 @@ function findClaudeCli() {
 function connectCode() {
   const launch = mcpLaunch();
   const cli = findClaudeCli();
-  const run = (args) => new Promise((resolve) => execFile(cli, args, { timeout: 20000 }, (err, stdout, stderr) => resolve({ err, out: (stdout || '') + (stderr || '') })));
+  // On Windows, claude is often a .cmd shim (or only on PATH), which needs a shell and quoted arguments.
+  const win = process.platform === 'win32';
+  const quote = (a) => (/[\s"]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a);
+  const run = (args) => new Promise((resolve) => execFile(win ? quote(cli) : cli, win ? args.map(quote) : args, { timeout: 20000, shell: win },
+    (err, stdout, stderr) => resolve({ err, out: (stdout || '') + (stderr || '') })));
   return run(['mcp', 'remove', 'blobby', '-s', 'user'])
     .then(() => run(['mcp', 'add', 'blobby', '-s', 'user', '-e', 'ELECTRON_RUN_AS_NODE=1', '--', launch.command, launch.args[0]]))
     .then(({ err, out }) => (err ? { ok: false, error: out || err.message } : { ok: true, note: 'Added. Start a new Claude Code session to use Blobby.' }));
@@ -371,22 +387,23 @@ function registerIpc() {
 
 function buildMenu() {
   const cmd = (label, command, accelerator) => ({ label, accelerator, click: () => send('menu', command) });
+  const appMenu = IS_MAC ? [{
+    label: app.name,
+    submenu: [
+      cmd('About Blobby', 'help'),
+      { type: 'separator' },
+      cmd('Settings…', 'settings', 'CmdOrCtrl+,'),
+      cmd('Connect AI…', 'connect'),
+      { type: 'separator' },
+      { role: 'services' },
+      { type: 'separator' },
+      { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' },
+      { type: 'separator' },
+      { role: 'quit' },
+    ],
+  }] : [];
   const template = [
-    {
-      label: app.name,
-      submenu: [
-        cmd('About Blobby', 'help'),
-        { type: 'separator' },
-        cmd('Settings…', 'settings', 'CmdOrCtrl+,'),
-        cmd('Connect AI…', 'connect'),
-        { type: 'separator' },
-        { role: 'services' },
-        { type: 'separator' },
-        { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' },
-        { type: 'separator' },
-        { role: 'quit' },
-      ],
-    },
+    ...appMenu,
     {
       label: 'File',
       submenu: [
@@ -396,7 +413,12 @@ function buildMenu() {
         cmd('Export HTML + CSS…', 'export', 'CmdOrCtrl+E'),
         { type: 'separator' },
         cmd('Home', 'home', 'CmdOrCtrl+Shift+H'),
-        { role: 'close' },
+        ...(IS_MAC ? [{ role: 'close' }] : [
+          cmd('Settings…', 'settings', 'CmdOrCtrl+,'),
+          cmd('Connect AI…', 'connect'),
+          { type: 'separator' },
+          { role: 'quit' },
+        ]),
       ],
     },
     {
@@ -442,6 +464,10 @@ function buildMenu() {
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
+
+// A custom projects folder (BLOBBY_HOME, used by tests) gets its own window state, tabs and
+// preferences, so it never mixes with the everyday ~/Blobby app.
+if (process.env.BLOBBY_HOME) app.setPath('userData', path.join(store.ROOT, '.app-data'));
 
 app.whenReady().then(() => {
   app.setName('Blobby');

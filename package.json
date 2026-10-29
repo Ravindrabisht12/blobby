@@ -23,14 +23,14 @@
   "type": "module",
   "main": "src/main/main.js",
   "engines": {
-    "node": ">=20"
+    "node": ">=20.17"
   },
   "scripts": {
-    "start": "electron .",
+    "start": "node scripts/start.mjs",
     "mcp": "node src/mcp/server.js",
     "test": "node scripts/smoke.mjs",
     "test:ui": "node scripts/ui-e2e.mjs",
-    "postinstall": "node --experimental-require-module node_modules/electron/install.js"
+    "postinstall": "node --experimental-require-module node_modules/electron/install.js && node scripts/brand-electron.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",

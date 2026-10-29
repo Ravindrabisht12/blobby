@@ -9,7 +9,7 @@ Ask Claude, Cursor, Codex or any MCP app for a design and watch it appear: real 
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-e33f52" alt="MIT license"></a>
   <img src="https://img.shields.io/badge/MCP-server-191919" alt="MCP server">
   <img src="https://img.shields.io/badge/Electron-45-47848F?logo=electron&logoColor=white" alt="Electron 45">
-  <img src="https://img.shields.io/badge/Node.js-20%2B-5FA04E?logo=nodedotjs&logoColor=white" alt="Node.js 20+">
+  <img src="https://img.shields.io/badge/Node.js-20.17%2B-5FA04E?logo=nodedotjs&logoColor=white" alt="Node.js 20.17+">
   <img src="https://img.shields.io/badge/build%20step-none-lightgrey" alt="No build step">
 </p>
 
@@ -29,7 +29,7 @@ Ask Claude, Cursor, Codex or any MCP app for a design and watch it appear: real 
 
 ## Quick start
 
-**Requirements:** [Node.js](https://nodejs.org) 20+, Git, and macOS. Windows and Linux should work but are untested.
+**Requirements:** [Node.js](https://nodejs.org) 20.17+ (22 recommended) and Git. Works on macOS (tested). Windows and Linux are supported but not tested yet; please [open an issue](https://github.com/Ravindrabisht12/blobby/issues) if something breaks.
 
 ```bash
 git clone https://github.com/Ravindrabisht12/blobby.git
@@ -62,6 +62,8 @@ Watch it build on the canvas. If you don't name a project, Blobby asks your AI w
 
 <details><summary>Manual setup (stdio)</summary>
 
+On macOS:
+
 ```json
 {
   "mcpServers": {
@@ -74,7 +76,7 @@ Watch it build on the canvas. If you don't name a project, Blobby asks your AI w
 }
 ```
 
-The exact command for your machine is in **Connect AI → Other agents**. The MCP server starts the app if it isn't running.
+On Windows the command is `...\blobby\node_modules\electron\dist\electron.exe` (use `\\` between folders inside JSON). The exact command for your machine is in **Connect AI → Other agents**. The MCP server starts the app if it isn't running.
 </details>
 
 ChatGPT only connects to servers on the internet, so it can't reach a local app directly. Codex works locally today.
@@ -102,7 +104,7 @@ ChatGPT only connects to servers on the internet, so it can't reach a local app 
 | **Workspace** | Tabs for open pages, Home with recents and projects (grid or list), search, hideable panels (<kbd>⌘\\</kbd>), native menu bar |
 | **Export** | A clean `index.html` + `styles.css` + assets for any page (<kbd>⌘E</kbd>) |
 
-Press <kbd>⌘/</kbd> in the app for all keyboard shortcuts.
+Press <kbd>⌘/</kbd> in the app for all keyboard shortcuts. On Windows and Linux, use <kbd>Ctrl</kbd> for <kbd>⌘</kbd> and <kbd>Alt</kbd> for <kbd>⌥</kbd>; the app shows the right keys for your system.
 
 ## Tech stack
 
@@ -117,7 +119,8 @@ Press <kbd>⌘/</kbd> in the app for all keyboard shortcuts.
 | Icons | [Lucide](https://lucide.dev) (UI) and [Simple Icons](https://simpleicons.org) (AI app logos), inlined as SVG |
 | Storage | Plain files: HTML pages, JSON metadata, PNG/JPG assets in `~/Blobby` |
 | Tests | Node scripts plus [Playwright](https://playwright.dev) driving the real Electron app |
-| Runtime | Node.js 20+, ES modules throughout |
+| Runtime | Node.js 20.17+, ES modules throughout |
+| Platforms | macOS (tested), Windows and Linux (supported, untested) |
 
 Three runtime dependencies in total: the MCP SDK, linkedom and Zod.
 
@@ -206,6 +209,11 @@ Restart the AI app after connecting. Most apps only read MCP settings at startup
 <details><summary><b>"Port 7788 in use"</b></summary>
 
 Another program is using the port. Start Blobby with `BLOBBY_MCP_PORT=7790 npm start`, then copy the new URL from **Connect AI**.
+</details>
+
+<details><summary><b>The Dock says "Electron" instead of "Blobby" (macOS)</b></summary>
+
+`npm install` turns the local copy of Electron into `Blobby.app`, and `npm start` launches it from there. If the Dock still says Electron, run `node scripts/brand-electron.mjs`, quit the app (<kbd>⌘Q</kbd>) and run `npm start` again. If an old Dock icon is pinned, remove it and pin the new one.
 </details>
 
 <details><summary><b>The AI says Blobby isn't running</b></summary>

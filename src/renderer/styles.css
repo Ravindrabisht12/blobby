@@ -436,7 +436,6 @@ pre.code { margin: 0; padding: 10px; background: var(--ink); color: #e8e8e8; bor
    ===================================================================== */
 
 .topbar { gap: 12px; }
-.app.platform-desktop .topbar { padding-left: 80px; }
 .tb-icon {
   width: 30px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: var(--nav-muted);
   display: grid; place-items: center; flex: none; -webkit-app-region: no-drag;
@@ -553,7 +552,8 @@ pre.code { margin: 0; padding: 10px; background: var(--ink); color: #e8e8e8; bor
   padding: 0 10px 0 8px; background: var(--ink); color: var(--nav); border-bottom: 1px solid #000;
   -webkit-app-region: drag;
 }
-.app.platform-desktop .tabbar { padding-left: 80px; }
+.app.os-mac .tabbar { padding-left: 80px; } /* room for the traffic lights */
+.app.os-other .tabbar { padding-right: 150px; } /* room for the native window buttons */
 .tabbar button, .tabbar .tab { -webkit-app-region: no-drag; }
 .tab {
   display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 10px; flex: none;

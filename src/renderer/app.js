@@ -49,6 +49,39 @@ const state = {
 };
 
 
+// Shortcut hints are written Mac-style (⌘ ⌥ ⇧ ⌫). Keyboard handling already accepts Ctrl for ⌘;
+// on Windows and Linux every hint the UI shows is rewritten to Ctrl / Alt / Shift as it appears.
+const IS_MAC = /Mac/.test(navigator.platform);
+const KEY_WORDS = { '⌘': 'Ctrl', '⌥': 'Alt', '⇧': 'Shift', '⌫': 'Backspace' };
+const keyText = (s) => s
+  .replace(/([⌘⌥⇧⌫])(?=$|[\s)<])/g, (_, c) => KEY_WORDS[c]) // a key on its own: "⌘" → "Ctrl"
+  .replace(/[⌘⌥⇧⌫]/g, (c) => `${KEY_WORDS[c]}+`); // a modifier before a key: "⌘C" → "Ctrl+C"
+
+function localizeKeys(node) {
+  if (node.nodeType === Node.TEXT_NODE) {
+    if (/[⌘⌥⇧⌫]/.test(node.data)) node.data = keyText(node.data);
+    return;
+  }
+  if (node.nodeType !== Node.ELEMENT_NODE) return;
+  for (const el of [node, ...node.querySelectorAll('[title]')]) {
+    const t = el.getAttribute?.('title');
+    if (t && /[⌘⌥⇧⌫]/.test(t)) el.setAttribute('title', keyText(t));
+  }
+  const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) if (/[⌘⌥⇧⌫]/.test(walker.currentNode.data)) walker.currentNode.data = keyText(walker.currentNode.data);
+}
+
+function watchKeyLabels() {
+  if (IS_MAC) return;
+  localizeKeys(document.body);
+  new MutationObserver((muts) => {
+    for (const m of muts) {
+      if (m.type === 'childList') m.addedNodes.forEach(localizeKeys);
+      else localizeKeys(m.target);
+    }
+  }).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['title'] });
+}
+
 const boards = new Map(); // device -> { device, el, wrap, shield, iframe }
 
 // ---------- utils ----------
@@ -427,7 +460,7 @@ function renderPromo() {
 }
 
 function renderWorkspace() {
-  $('#wsBox').innerHTML = `<div class="ws-btn static" title="${esc(state.appInfo?.root || '')}"><span class="ws-mark">${ic('monitor', 13)}</span><span class="name">On this Mac</span><span class="role">Local</span></div>`;
+  $('#wsBox').innerHTML = `<div class="ws-btn static" title="${esc(state.appInfo?.root || '')}"><span class="ws-mark">${ic('monitor', 13)}</span><span class="name">${IS_MAC ? 'On this Mac' : 'On this computer'}</span><span class="role">Local</span></div>`;
 }
 
 // ---------- panels ----------
@@ -677,7 +710,7 @@ function projectMenu(slug, x, y) {
       if (v?.name.trim()) { await run(() => store('renameProject', slug, { name: v.name.trim(), site: v.site.trim() })); await refreshProjects(); }
     } },
     { label: 'Duplicate', icon: 'copy', action: async () => { await run(() => store('duplicateProject', slug, {}), 'Project duplicated'); await refreshProjects(); } },
-    { label: 'Show in Finder', icon: 'folder', action: () => api.reveal(slug) },
+    { label: IS_MAC ? 'Show in Finder' : 'Show in folder', icon: 'folder', action: () => api.reveal(slug) },
     '-',
     { label: 'Delete…', icon: 'trash-2', danger: true, action: async () => {
       if (!(await confirmModal({ title: `Delete “${p.name}”?`, sub: `Its ${p.pages.length} page(s) and comments move to the trash folder.` }))) return;
@@ -2169,7 +2202,8 @@ function bindChrome() {
 }
 
 async function init() {
-  $('#app').classList.add('platform-desktop');
+  $('#app').classList.add('platform-desktop', IS_MAC ? 'os-mac' : 'os-other');
+  watchKeyLabels();
   fillIcons();
   applyPanels();
   state.appInfo = await api.appInfo?.().catch(() => null) || null;
