@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Blobby</title>
+  <link rel="icon" href="logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app view-home" id="app">
+    <header class="tabbar">
+      <button class="tab home-tab" id="homeTab" data-icon="layout-grid" data-size="15" title="Home"><span>Home</span></button>
+      <div class="open-tabs" id="openTabs" role="tablist" aria-label="Open pages"></div>
+      <button class="tb-icon" id="newTabBtn" data-icon="plus" data-size="16" title="New page" aria-label="New page"></button>
+      <div class="tab-right">
+        <div class="ai-pill" id="aiPill" hidden><span class="dot"></span><span id="aiPillText">AI is editing</span></div>
+        <button class="btn small" id="connectBtn" data-icon="plug" data-size="14">Connect AI</button>
+        <button class="account" id="accountBtn" title="Account and settings" aria-label="Account and settings"></button>
+      </div>
+    </header>
+
+    <aside class="sidebar">
+      <div class="side-home home-only">
+        <button class="me-row" id="meRow"></button>
+        <label class="side-search">
+          <span data-icon="search" data-size="14"></span>
+          <input id="sideSearch" placeholder="Search" autocomplete="off" spellcheck="false">
+          <kbd>⌘F</kbd>
+        </label>
+        <nav class="side-nav">
+          <button data-nav="recents" data-icon="clock" data-size="15">Recents</button>
+          <button data-nav="learn" data-icon="graduation-cap" data-size="15">Learn</button>
+        </nav>
+        <div class="side-group">
+          <div id="wsBox"></div>
+          <nav class="side-nav">
+            <button data-nav="projects" data-icon="layout-grid" data-size="15">Projects</button>
+            <button data-nav="settings" data-icon="settings" data-size="15">Settings</button>
+          </nav>
+        </div>
+        <section class="side-section grow">
+          <div class="side-head"><span>Projects</span><button class="icon-btn" id="newProjectBtn" data-icon="plus" data-size="14" title="New project" aria-label="New project"></button></div>
+          <ul class="list" id="projectList"></ul>
+        </section>
+        <div class="promo" id="promo"></div>
+        <footer class="side-links">
+          <button class="link" data-nav="learn">Help</button><span>·</span><button class="link" data-nav="shortcuts">Shortcuts</button><span>·</span><button class="link" data-nav="connect">Connect AI</button>
+        </footer>
+      </div>
+
+      <div class="side-editor editor-only">
+        <div class="side-title">
+          <button class="proj-btn" id="projBtn" title="Project overview"><img src="logo.svg" alt="" width="16" height="20"><b id="projName"></b></button>
+          <button class="tb-icon" id="toggleLeft" data-icon="panel-left" title="Hide sidebar (⌥⌘1)" aria-label="Toggle sidebar"></button>
+        </div>
+        <section class="side-section pages-section">
+          <div class="side-head"><span>Pages</span><button class="icon-btn" id="newPageBtn" data-icon="plus" data-size="14" title="New page (⌘N)" aria-label="New page"></button></div>
+          <ul class="list" id="pageList"></ul>
+        </section>
+        <section class="side-section grow layers-section">
+          <div class="side-head"><span>Layers</span><span class="side-hint" id="layersHint"></span></div>
+          <div class="layers" id="layers" role="tree" aria-label="Layers"></div>
+        </section>
+        <footer class="side-foot">
+          <button class="link desktop-only" id="revealBtn" data-icon="folder-open" data-size="13" disabled>Open project folder</button>
+          <label class="follow"><input type="checkbox" id="followAi" checked> Follow AI edits</label>
+        </footer>
+      </div>
+    </aside>
+
+    <nav class="rail editor-only" id="rail" aria-label="Tools">
+      <button data-tool="select" data-icon="mouse-pointer-2" data-size="18" title="Select (V)" aria-label="Select"></button>
+      <button data-tool="hand" data-icon="hand" data-size="18" title="Hand: drag to pan (H)" aria-label="Hand"></button>
+      <button data-tool="interact" data-icon="play" data-size="18" title="Interact: try links and hovers (P)" aria-label="Interact"></button>
+      <hr>
+      <button data-insert="text" data-icon="type" data-size="18" title="Add text (T)" aria-label="Add text"></button>
+      <button data-insert="box" data-icon="square" data-size="18" title="Add box (R)" aria-label="Add box"></button>
+      <button data-insert="button" data-icon="rectangle-horizontal" data-size="18" title="Add button (B)" aria-label="Add button"></button>
+      <button data-insert="image" data-icon="image-plus" data-size="18" title="Add image" aria-label="Add image"></button>
+      <hr>
+      <button data-tool="comment" data-icon="message-square-plus" data-size="18" title="Comment (C)" aria-label="Comment"></button>
+    </nav>
+
+    <main class="dash home-only" id="dash"></main>
+
+    <main class="canvas editor-only" id="canvas">
+      <div class="world" id="world"></div>
+      <div class="empty" id="empty"></div>
+    </main>
+
+    <aside class="panel editor-only">
+      <div class="panel-top">
+        <div class="panel-spacer"></div>
+        <button class="zoom-btn" id="zoomBtn" title="Zoom and artboards"><span id="zoomText">100%</span><span data-icon="chevron-down" data-size="13"></span></button>
+        <button class="btn small primary" id="exportBtn" data-icon="download" data-size="14" title="Export HTML + CSS (⌘E)" disabled>Export</button>
+        <button class="tb-icon" id="toggleRight" data-icon="panel-right" title="Hide panel (⌥⌘2)" aria-label="Toggle panel"></button>
+      </div>
+      <div class="tabs" role="tablist">
+        <button data-tab="inspect" class="active">Design</button>
+        <button data-tab="feedback">Comments <span class="count" id="fbCount" hidden>0</span></button>
+      </div>
+      <div class="panel-body" id="panelInspect"></div>
+      <div class="panel-body" id="panelFeedback" hidden></div>
+    </aside>
+  </div>
+
+  <div class="menu" id="menu" hidden role="menu"></div>
+  <div class="modal-back" id="modalBack" hidden><div class="modal" id="modal" role="dialog" aria-modal="true"></div></div>
+  <div class="toast" id="toast" hidden></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

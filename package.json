@@ -1,0 +1,44 @@
+{
+  "name": "blobby",
+  "productName": "Blobby",
+  "version": "0.1.0",
+  "description": "An open-source design canvas your AI drives through MCP. Real HTML + CSS, live on your screen.",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "design",
+    "ai",
+    "claude",
+    "cursor",
+    "electron",
+    "html",
+    "css"
+  ],
+  "license": "MIT",
+  "author": "Ravindra Bisht",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ravindrabisht12/blobby.git"
+  },
+  "type": "module",
+  "main": "src/main/main.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "electron .",
+    "mcp": "node src/mcp/server.js",
+    "test": "node scripts/smoke.mjs",
+    "test:ui": "node scripts/ui-e2e.mjs",
+    "postinstall": "node --experimental-require-module node_modules/electron/install.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "linkedom": "^0.18.14",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "electron": "^45.1.0",
+    "playwright-core": "^1.64.1"
+  }
+}
