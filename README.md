@@ -68,7 +68,7 @@ On macOS:
 {
   "mcpServers": {
     "blobby": {
-      "command": "/path/to/blobby/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron",
+      "command": "/path/to/blobby/node_modules/electron/dist/Blobby.app/Contents/MacOS/Electron",
       "args": ["/path/to/blobby/src/mcp/server.js"],
       "env": { "ELECTRON_RUN_AS_NODE": "1" }
     }
@@ -198,7 +198,7 @@ There's no build step: edit a file in `src/renderer/` and reload the window (<kb
 
 <details><summary><b>npm install fails while downloading Electron</b></summary>
 
-Run `npm install` again (it's often a network hiccup). Behind a proxy, set `ELECTRON_MIRROR`. Make sure you're on Node 20 or newer: `node -v`.
+Run `npm install` again (it's often a network hiccup). Behind a proxy, set `ELECTRON_MIRROR`. Make sure you're on Node 20.17 or newer: `node -v`.
 </details>
 
 <details><summary><b>My AI app doesn't show Blobby's tools</b></summary>
