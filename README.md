@@ -13,7 +13,10 @@ Ask Claude, Cursor, Codex or any MCP app for a design and watch it appear: real 
   <img src="https://img.shields.io/badge/build%20step-none-lightgrey" alt="No build step">
 </p>
 
-<p align="center"><img src="docs/editor.png" alt="Blobby editor with a landing page, layers, and a comment thread"></p>
+<p align="center"><img src="docs/demo.gif" alt="Claude builds a Stripe-style landing page in Blobby section by section, runs QA, then applies a comment to shorten the headline" width="100%"></p>
+
+<!-- Full demo with voiceover: in GitHub's web editor, drag blobby-demo-github.mp4 onto the empty line below this comment. -->
+
 
 ## Contents
 
@@ -89,6 +92,8 @@ ChatGPT only connects to servers on the internet, so it can't reach a local app 
 - `Export the landing page from Blobby`
 
 ## Features
+
+<p align="center"><img src="docs/editor.png" alt="Blobby editor with a landing page, layers, and a comment thread"></p>
 
 <p align="center"><img src="docs/dashboard.png" width="49%" alt="Home with recent pages"> <img src="docs/connect.png" width="49%" alt="Connect your agent dialog"></p>
 
