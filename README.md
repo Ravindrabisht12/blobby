@@ -103,9 +103,10 @@ ChatGPT only connects to servers on the internet, so it can't reach a local app 
 | **Tools** | Select, hand, add text / box / button / image, comment |
 | **Layers** | The page tree with layout direction (row, column, grid). Drag to reorder or nest |
 | **Design panel** | Layout (flex/grid, alignment, gap), size, spacing, typography, fill, border, effects, position, plus brand tokens shared across the project |
-| **Direct editing** | Drag to reorder, resize handles, double-click to edit text, copy / paste / duplicate, undo |
+| **Direct editing** | Drag to reorder, resize handles, double-click to edit text, copy / paste / duplicate, undo. Changes are saved as CSS rules, never inline styles. Edits on the tablet or mobile artboard apply only to that size and smaller |
+| **Research** | Your AI reads the client's site (colors, fonts, logo, customer logos, page structure), public social profiles, free photo libraries and real company logos before it designs, so the first version uses real content instead of grey boxes |
 | **Comments** | Threads pinned to elements, with a screenshot of what you pointed at. Your AI reads them, fixes, and replies |
-| **QA** | Horizontal overflow, color contrast (WCAG), tiny text, tap targets, broken images, missing alt text, placeholder copy, heading structure, JS errors, off-brand colors |
+| **QA** | Horizontal overflow, color contrast (WCAG), tiny text, tap targets, broken images, missing alt text, empty image boxes, logo strips written as text, placeholder copy, heading structure, inline styles, JS errors, off-brand colors |
 | **Workspace** | Tabs for open pages, Home with recents and projects (grid or list), search, hideable panels (<kbd>⌘\\</kbd>), native menu bar |
 | **Export** | A clean `index.html` + `styles.css` + assets for any page (<kbd>⌘E</kbd>) |
 
@@ -171,18 +172,20 @@ A project on disk:
 
 ## MCP tools
 
-28 tools and 2 prompts. The server also sends your AI a step-by-step design workflow, so results are consistent.
+33 tools and 2 prompts. The server also sends your AI a step-by-step design workflow, so results are consistent.
 
 | Group | Tools |
 |---|---|
 | Projects | `list_projects`, `create_project`, `get_project`, `set_brand` |
-| Research and planning | `analyze_site`, `create_page`, `get_brief`, `set_brief` |
+| Research and planning | `get_design_playbook`, `analyze_site`, `analyze_social`, `find_images`, `find_logos`, `view_assets`, `create_page`, `get_brief`, `set_brief` |
 | Reading | `get_tree`, `get_html`, `get_selection`, `get_screenshot` |
 | Editing | `write_html`, `set_css`, `update_styles`, `set_text`, `set_attributes`, `move_nodes`, `delete_nodes`, `duplicate_page`, `add_asset`, `undo` |
 | Quality | `qa_check` |
 | Feedback | `get_feedback`, `reply_feedback`, `resolve_feedback` |
 | Output | `export_page`, `open_in_blobby` |
 | Prompts | `design_page`, `apply_feedback` |
+
+`find_images` searches Wikimedia Commons and Openverse with no setup and returns each photo's license and credit. For better photography, add a free [Pexels API key](https://www.pexels.com/api/) as `PEXELS_API_KEY` in your MCP config, or as `"pexelsKey"` in `~/Blobby/.config.json`. `analyze_social` only reads what a profile shows to logged-out visitors; when photos are hidden, your AI asks for a folder of photos and imports it with `add_asset`.
 
 ## Develop
 

@@ -82,6 +82,63 @@ export function siteProbe() {
     }
   }
 
+  // Logo strips ("Trusted by …"): rows of 4+ small, similar-sized images or SVGs outside the header.
+  const markName = (m) => m.getAttribute('alt') || m.getAttribute('aria-label') || m.querySelector?.('title')?.textContent
+    || m.closest('a')?.getAttribute('aria-label') || m.closest('a')?.getAttribute('title')
+    || (m.currentSrc || m.src || '').split('/').pop().split('?')[0].replace(/\.\w+$/, '').replace(/[-_]+/g, ' ') || '';
+  const marks = [...document.querySelectorAll('img, svg')].filter((m) => {
+    if (!visible(m) || m.closest('header, nav, button') || (m.tagName.toLowerCase() === 'svg' && m.parentElement?.closest('svg'))) return false;
+    const r = m.getBoundingClientRect();
+    return r.height >= 12 && r.height <= 110 && r.width >= 30 && r.width <= 320;
+  }).slice(0, 400);
+  const counts = new Map();
+  const ups = (m) => { const out = []; for (let p = m.parentElement, i = 0; p && i < 6; p = p.parentElement, i++) out.push(p); return out; };
+  for (const m of marks) for (const p of ups(m)) counts.set(p, (counts.get(p) || 0) + 1);
+  const rows = new Map();
+  for (const m of marks) {
+    const row = ups(m).find((p) => counts.get(p) >= 4);
+    if (row) rows.set(row, [...(rows.get(row) || []), m]);
+  }
+  const logoClouds = [...rows.entries()].filter(([, ms]) => {
+    const hs = ms.map((m) => m.getBoundingClientRect().height);
+    return ms.length >= 4 && Math.max(...hs) / Math.min(...hs) < 3;
+  }).slice(0, 3).map(([row, ms]) => {
+    const section = row.closest('section') || row.parentElement;
+    const label = [...(section?.querySelectorAll('h2, h3, p, span') || [])].map((e) => ownText(e)).find((t) => t.length > 6 && t.length < 90) || '';
+    return {
+      label,
+      logos: ms.slice(0, 16).map((m) => m.tagName.toLowerCase() === 'svg'
+        ? { name: markName(m).trim().slice(0, 60), type: 'svg', svg: (() => { const c = m.cloneNode(true); const r = m.getBoundingClientRect(); if (!c.getAttribute('viewBox')) c.setAttribute('viewBox', `0 0 ${Math.round(r.width)} ${Math.round(r.height)}`); c.setAttribute('fill', c.getAttribute('fill') || cs(m).color); return c.outerHTML.slice(0, 20000); })() }
+        : { name: markName(m).trim().slice(0, 60), type: 'img', src: abs(m.currentSrc || m.src) }),
+    };
+  });
+
+  // Page structure, top to bottom: each block's heading, height, background and column layout.
+  const sections = (() => {
+    let kids = [...(document.querySelector('main') || document.body).children].filter(visible);
+    while (kids.length === 1 && kids[0].children.length > 1) kids = [...kids[0].children].filter(visible);
+    return kids.filter((el) => el.getBoundingClientRect().height > 120).slice(0, 24).map((el) => {
+      const r = el.getBoundingClientRect();
+      let cols = 1;
+      for (const c of [el, ...el.querySelectorAll('*')].slice(0, 300)) {
+        const d = cs(c).display;
+        if (!/flex|grid/.test(d)) continue;
+        const items = [...c.children].filter((k) => visible(k) && k.getBoundingClientRect().width > 80);
+        const tops = items.map((k) => Math.round(k.getBoundingClientRect().top / 12));
+        const sameRow = Math.max(0, ...Object.values(tops.reduce((o, t) => { o[t] = (o[t] || 0) + 1; return o; }, {})));
+        if (sameRow > cols) cols = sameRow;
+      }
+      const heading = el.querySelector('h1, h2, h3');
+      return {
+        heading: heading ? heading.textContent.trim().replace(/\s+/g, ' ').slice(0, 90) : '',
+        top: Math.round(r.top + scrollY), height: Math.round(r.height),
+        background: toHex(cs(el).backgroundColor) || (cs(el).backgroundImage !== 'none' ? 'image/gradient' : null),
+        columns: cols, images: el.querySelectorAll('img, picture, video').length,
+        buttons: el.querySelectorAll('a[class*="btn" i], a[class*="button" i], button').length,
+      };
+    });
+  })();
+
   const fontLinks = [...document.querySelectorAll('link[href*="fonts.googleapis"], link[href*="typekit"], link[href*="fonts.bunny"]')].map((l) => l.href);
   const meta = (n) => document.querySelector(`meta[name="${n}"], meta[property="${n}"]`)?.content || '';
   const container = (() => {
@@ -104,6 +161,8 @@ export function siteProbe() {
     fontLinks,
     buttons,
     logo,
+    logoClouds,
+    sections,
     images,
     backgroundImages: bgImages,
     containerMaxWidth: container,
@@ -205,5 +264,66 @@ export function qaProbe() {
   for (const sec of document.querySelectorAll('body > *, section')) {
     if (sec.tagName !== 'SCRIPT' && sec.tagName !== 'STYLE' && sec.getBoundingClientRect().height < 4 && sec.children.length) add('warning', 'collapsed', 'Element has content but is collapsed to ~0px tall.', sec);
   }
+  // Empty image boxes: grey/flat blocks standing in for a photo.
+  const hint = /(^|[-_\s])(img|image|photo|picture|media|thumb|avatar|placeholder|visual|art|hero-img|cover)([-_\s]|$)/i;
+  let empties = 0;
+  for (const el of els) {
+    if (empties >= 6 || el.closest('svg') || !visible(el) || el.children.length || (el.textContent || '').trim()) continue;
+    if (['IMG', 'SVG', 'VIDEO', 'CANVAS', 'IFRAME', 'INPUT', 'TEXTAREA', 'SELECT', 'HR', 'PICTURE'].includes(el.tagName.toUpperCase())) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width < 120 || r.height < 90 || r.width > W * 0.98) continue;
+    const s = cs(el);
+    if (s.backgroundImage !== 'none' && !/gradient/.test(s.backgroundImage)) continue;
+    const c = parse(s.backgroundColor);
+    const grey = c && c[3] > 0.3 && Math.max(c[0], c[1], c[2]) - Math.min(c[0], c[1], c[2]) < 18;
+    const named = hint.test(el.getAttribute('class') || '') || /image|photo/i.test(el.getAttribute('aria-label') || '');
+    if (named || (grey && s.borderStyle === 'dashed')) { add(/gradient/.test(s.backgroundImage) ? 'warning' : 'error', 'image-placeholder', 'Empty box where an image should be. Use a real photo (analyze_site / analyze_social / find_images / add_asset), or design this block as real art. Never ship grey boxes.', el); empties++; }
+    else if (grey && r.width * r.height > 40000) { add('warning', 'image-placeholder', 'Large flat grey box with no content. If it stands in for an image, use a real one.', el); empties++; }
+  }
+
+  // Logo strips written as plain text names.
+  for (const row of document.querySelectorAll('ul, ol, div, section')) {
+    const items = [...row.children].filter(visible);
+    if (items.length < 4 || items.length > 14) continue;
+    const textOnly = items.every((k) => !k.querySelector('img, svg, picture') && /^\S+(\s\S+){0,2}$/.test((k.textContent || '').trim()));
+    if (!textOnly) continue;
+    const ctx = `${row.className} ${row.getAttribute('aria-label') || ''} ${row.closest('section')?.querySelector('h2, h3, p')?.textContent || ''} ${row.previousElementSibling?.textContent || ''}`;
+    if (/logo|trusted|clients?|customers?|partners?|brands|used by|featured|as seen/i.test(ctx)) {
+      add('error', 'text-logos', 'Logo strip shows company names as text. Use real logos: find_logos, or the logoClouds from analyze_site.', row);
+      break;
+    }
+  }
   return { viewport: W, pageHeight: document.documentElement.scrollHeight, issues: issues.slice(0, 40) };
+}
+
+// Reads what a public profile page shows to a logged-out visitor (Instagram, X, YouTube, LinkedIn,
+// TikTok, Linktree, Behance, …): name, bio, links, structured data and the visible photos.
+export function profileProbe() {
+  const meta = (n) => document.querySelector(`meta[name="${n}"], meta[property="${n}"]`)?.content || '';
+  const abs = (u) => { try { return new URL(u, location.href).href; } catch { return u; } };
+  const visible = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+  const seen = new Set();
+  const images = [...document.images]
+    .filter((i) => visible(i) && i.naturalWidth >= 150 && i.naturalHeight >= 150)
+    .map((i) => ({ src: abs(i.currentSrc || i.src), alt: (i.alt || '').slice(0, 220), width: i.naturalWidth, height: i.naturalHeight }))
+    .filter((i) => !seen.has(i.src) && seen.add(i.src))
+    .slice(0, 30);
+  const host = location.hostname.replace(/^www\./, '');
+  const links = [...new Set([...document.querySelectorAll('a[href^="http"]')].map((a) => a.href)
+    .filter((h) => { try { return !new URL(h).hostname.endsWith(host); } catch { return false; } }))].slice(0, 15);
+  const structured = [...document.querySelectorAll('script[type="application/ld+json"]')].map((s) => s.textContent.trim()).join('\n').slice(0, 3000);
+  const text = (document.body.innerText || '').replace(/\n{2,}/g, '\n').trim();
+  return {
+    url: location.href,
+    title: document.title,
+    name: meta('og:title') || meta('twitter:title'),
+    description: meta('og:description') || meta('description') || meta('twitter:description'),
+    profileImage: abs(meta('og:image') || meta('twitter:image') || ''),
+    siteName: meta('og:site_name'),
+    structured,
+    links,
+    images,
+    text: text.slice(0, 1500),
+    loginWall: images.length < 3 && /log ?in|sign ?up|sign in/i.test(text.slice(0, 2000)),
+  };
 }

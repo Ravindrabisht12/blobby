@@ -15,6 +15,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 let failures = 0;
 const check = (ok, label) => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}`); if (!ok) failures++; };
 const html = () => store.getPageHtml('acme-coffee', 'landing').html;
+const edits = () => store.getPageHtml('acme-coffee', 'landing').edits_css;
 
 // Seed a realistic project before the app starts.
 store.createProject({ name: 'Acme Coffee', site: 'acme.coffee' });
@@ -63,7 +64,7 @@ try {
   await fs1.click();
   await fs1.press('Shift+ArrowUp');
   await wait(900);
-  check(/font-size: 78px/.test(html()), 'design panel stepping writes the style (68→78px)');
+  check(/font-size: 78px/.test(edits()) && !/style="/.test(html()), 'design panel stepping writes a CSS rule, not an inline style (68→78px)');
 
   // Comment with C; the app attaches a screenshot of the element.
   await a.mouse.click(h1Box.x + 20, h1Box.y + 10);
@@ -115,11 +116,11 @@ try {
   await a.mouse.move(handle.x - 60, handle.y + handle.height / 2, { steps: 6 });
   await a.mouse.up();
   await wait(1000);
-  check(/class="art" style="width: \d+px"|style="width: \d+px"[^>]*class="art"/.test(html()), 'resize handle sets width');
+  check(/#art \{\s*width: \d+px/.test(edits()) && /id="art"/.test(html()), 'resize handle sets width in the stylesheet');
   await a.keyboard.press('Escape');
   await a.keyboard.press('Meta+z');
   await wait(1000);
-  check(!/width: \d+px/.test(html().match(/<div[^>]*class="art"[^>]*>/)[0]), '⌘Z undoes the resize');
+  check(!/#art \{/.test(edits()), '⌘Z undoes the resize');
 
   // Tool rail.
   const fc = await frame.locator('.feats .card >> nth=0').boundingBox();

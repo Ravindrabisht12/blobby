@@ -193,6 +193,8 @@ const bridgeMethods = {
   screenshot: ({ project, page, device, full }) => tasks.screenshot({ ...resolvePage(project, page), device, full }),
   qa: ({ project, page, devices }) => tasks.qa({ ...resolvePage(project, page), devices }),
   analyzeSite: ({ url }) => tasks.analyzeSite({ url }),
+  analyzeProfile: ({ url }) => tasks.analyzeProfile({ url }),
+  contactSheet: ({ items, columns }) => tasks.contactSheet({ items, columns }),
 };
 
 function startBridge() {

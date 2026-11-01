@@ -8,37 +8,46 @@ import fs from 'node:fs';
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as store from '../shared/store.js';
+import { findImages, findLogos, downloadAsset, playbook, PLAYBOOK_TYPES, IMAGE_FILE } from './research.js';
 
-export const INSTRUCTIONS = `Blobby is the user's design canvas. Designs are real HTML + CSS pages inside projects, shown live in the Blobby app on Desktop/Tablet/Mobile artboards. The user watches you build. The goal is to deliver exactly what the client asked for, in one go, with nothing that looks generic or random.
+export const INSTRUCTIONS = `Blobby is the user's design canvas. Designs are real HTML + CSS pages inside projects, shown live in the Blobby app on Desktop/Tablet/Mobile artboards. The user watches you build. The goal: the first version already looks like it was designed for THIS person or brand, with their real content, photos and logos. Nothing generic, nothing placeholder.
 
 FOLLOW THIS WORKFLOW EVERY TIME YOU CREATE OR REDESIGN A PAGE
 
-1. UNDERSTAND. Work out what the user wants: the site/brand, the page type, goal, audience, the sections they named, must-haves, tone and the primary CTA. If something important is truly unknown and can't be inferred, ask one short question. Otherwise make sensible, stated assumptions.
+1. UNDERSTAND. Work out who it's for, the page type, goal, audience, sections they named, must-haves, tone and the primary CTA. Note every source they gave: website, Instagram/YouTube/X/LinkedIn handles, competitors, sites they like, photo folders. If something important is truly unknown, ask one short question. Otherwise state your assumptions.
 
-2. RESEARCH THE REAL BRAND. If there is a client website, call analyze_site first. Use what it returns: the real colors (by visual weight), fonts, button shape and style, logo (add_asset it), product/hero images (add_asset them), nav labels, voice and real facts from the copy. Match the existing site's look unless the user asks for a new direction. Never invent a palette for a brand that already has one.
+2. RESEARCH BEFORE DESIGNING. Call create_page first only if you need a project to save assets into; otherwise research first.
+   - get_design_playbook for the site type (personal-brand, saas, ecommerce, local, portfolio, event): sections, imagery, type and what to avoid.
+   - Existing website: analyze_site with "project" set. It saves the logo and any customer logo strip, and returns real colors, fonts, buttons, images, nav, copy and the page structure.
+   - Social profiles: analyze_social for each handle. Use the real name, bio, numbers, links and photos. If posts are hidden behind a login, ask the user for a folder of their photos (e.g. an Instagram data download) and import it with add_asset "folder".
+   - References: pick 2-3 best-in-class sites in the same category (use your own web search if you have it, or the playbook's examples) and analyze_site them for layout and rhythm. Borrow structure, never their branding.
+   - Look at the photos you have with view_assets and choose the strongest ones for each slot.
 
-3. BRIEF. Call create_page with a complete "brief": goal, audience, sections (in order), must_haves (each one specific and checkable), cta, tone, brand_notes. The brief is saved and QA checks against it.
+3. BRIEF. Call create_page (or set_brief) with a complete brief: goal, audience, sections (in order), must_haves (specific and checkable), cta, tone, brand_notes, references (what you borrow from each), art_direction (layout concept, type pairing, color, mood) and imagery (every image slot -> its real source).
 
-4. BRAND TOKENS. Call set_brand with the real colors, fonts (Google Fonts css2 names), radius and container width. Use var(--…) tokens in all CSS.
+4. BRAND TOKENS. set_brand with the real colors and fonts (Google Fonts css2 names), radius and container width. Use var(--…) tokens in all CSS.
 
-5. BUILD section by section, in brief order: one write_html per section, plus set_css (mode "append") with that section's styles, including its @media (max-width: 768px) rules. Write real, specific copy for this business (no lorem ipsum, no "Feature one"). Use real images via add_asset. When you have none, use tasteful CSS/SVG art that fits the brand, never grey boxes.
+5. BUILD section by section, in brief order: one write_html per section, plus set_css (mode "append") with that section's classes and its @media (max-width: 768px) rules. Write real, specific copy from your research (no lorem ipsum, no invented stats or testimonials).
+   - Images: every slot gets a real image. In order: the brand's or person's own images -> find_images (free photos with licenses; credit them when required) -> deliberate SVG/CSS art that is clearly a design choice. Never an empty or grey box.
+   - Logo strips (clients, partners, sponsors, "as seen in"): real logos only, from analyze_site logoClouds or find_logos. Only companies that really are clients/partners.
+   - No inline style="" attributes. Use classes in set_css.
 
-6. QA LOOP (required). Call qa_check. It renders desktop, tablet and mobile, finds layout/contrast/content bugs and returns screenshots with the brief. Then:
+6. QA LOOP (required). Call qa_check. It renders desktop, tablet and mobile, finds layout/contrast/content bugs (including empty image boxes and text-only logo strips) and returns screenshots with the brief. Then:
    - fix every "error" and every warning that is a real problem
-   - compare the screenshots against EACH brief must-have and against the client's site, and fix whatever doesn't match (spacing, hierarchy, alignment, brand fidelity, mobile layout)
+   - compare the screenshots against EACH brief must-have, the art direction and the references, and fix whatever doesn't match
    - call qa_check again
-   Repeat until there are no errors and every must-have is visibly met (at most 4 rounds). Don't stop after the first build.
+   Repeat until there are no errors and every must-have is visibly met (at most 4 rounds).
 
-7. REPORT. Tell the user briefly what you built, which must-haves you checked, and any assumptions you made.
+7. REPORT. Tell the user briefly what you built, which sources you used, which must-haves you checked, any assumptions, and any image credits to keep.
 
 EDITING
-get_tree lists element ids (#b1a2b3c). Use write_html with target_id + position, update_styles, set_text, set_attributes or delete_nodes. undo reverts the last change. Never set or remove data-b-id attributes. After edits, run qa_check again.
+get_tree lists element ids (#b1a2b3c). Use write_html with target_id + position, update_styles, set_text, set_attributes or delete_nodes. undo reverts the last change. Never set or remove data-b-id attributes. update_styles writes CSS rules (per breakpoint with "device"), not inline styles. For reusable styling, change the classes with set_css. After edits, run qa_check again.
 
 FEEDBACK
 The user pins comments to elements in Blobby. When they say "apply my feedback" (or similar), call get_feedback. Apply every item exactly, run qa_check, then call resolve_feedback for each item with a one-line reply. get_selection returns the element the user has selected right now ("make this bigger").
 
 CRAFT
-Use semantic HTML and class-based CSS in set_css. Layouts are responsive (grid/flex, clamp() type). Center content in a max-width var(--container). Give it a clear type scale, generous consistent spacing (8px grid; 72-120px section padding on desktop, 48-64px on mobile) and one consistent primary button style. Add hover/focus states and subtle transitions. CSS-only interactivity (details/summary, :target, checkbox tabs) is preferred; small inline scripts only when needed. Tap targets are at least 44px on mobile, and text contrast meets WCAG AA.`;
+Use semantic HTML and class-based CSS in set_css. Layouts are responsive (grid/flex, clamp() type). Center content in a max-width var(--container). Give it a clear type scale, generous consistent spacing (8px grid; 72-120px section padding on desktop, 48-64px on mobile) and one consistent primary button style. Vary section layouts (split, full-bleed image, grid, list) instead of repeating identical cards. Add hover/focus states and subtle transitions. CSS-only interactivity (details/summary, :target, checkbox tabs) is preferred; small inline scripts only when needed. Tap targets are at least 44px on mobile, and text contrast meets WCAG AA.`;
 
 export function createBlobbyServer(host) {
   const server = new McpServer({ name: 'blobby', version: '0.2.0' }, { instructions: INSTRUCTIONS });
@@ -65,7 +74,21 @@ export function createBlobbyServer(host) {
     tone: z.string().optional(),
     brand_notes: z.string().optional().describe('What you took from analyze_site: colors, fonts, button style, imagery'),
     assumptions: z.array(z.string()).optional(),
+    references: z.array(z.string()).optional().describe('Sites studied and what you borrow from each, e.g. "linear.app: alternating feature rows with UI crops"'),
+    art_direction: z.string().optional().describe('Layout concept, type pairing, color use and mood'),
+    imagery: z.array(z.string()).optional().describe('Each image slot and its real source, e.g. "Hero: ../assets/ig-3.jpg (action shot from Instagram)"'),
   };
+
+  // Shows pictures to the AI as one numbered contact sheet (needs the app), or as small images.
+  async function sheet(items, columns) {
+    if (items.length && (await host.ensure().catch(() => false))) {
+      try {
+        const img = await host.call('contactSheet', { items, columns }, { timeout: 60000 });
+        return [{ type: 'image', data: img.data, mimeType: img.mimeType }];
+      } catch { /* fall through */ }
+    }
+    return [];
+  }
 
   // ---------- projects ----------
 
@@ -120,19 +143,130 @@ export function createBlobbyServer(host) {
   }
 
   tool('analyze_site', {
-    description: "Open a client's live website and extract its real brand: colors by visual weight, CSS variables, typography (h1/h2/body/nav), button styles, logo (SVG or image URL), main images, nav labels, headings and copy, plus desktop and mobile screenshots. Call this before designing for any existing brand.",
-    inputSchema: { url: z.string().describe('e.g. "acme.com" or a specific page URL') },
-  }, async ({ url }) => {
+    description: "Open a live website and read it: real colors by visual weight, CSS variables, typography, button styles, logo, customer/partner logo strips (logoClouds), main images, nav, headings, copy and the page structure section by section (sections), plus desktop and mobile screenshots. Use it on the client's site (with project, to save the logo and logo strip) and on 2-3 reference sites for layout ideas.",
+    inputSchema: {
+      url: z.string().describe('e.g. "acme.com" or a specific page URL'),
+      project: projectArg.optional().describe('Save the logo and logo-strip logos into this project\'s assets. Leave empty when studying a reference site'),
+    },
+  }, async ({ url, project }) => {
     await needApp('analyze_site');
     const res = await host.call('analyzeSite', { url }, { timeout: 90000 });
-    const content = [{ type: 'text', text: JSON.stringify(res.data, null, 2) }];
+    const data = res.data;
+    const saved = [];
+    const save = async (item, name) => {
+      try {
+        const r = item.svg
+          ? store.addAsset(project, { filename: `${name}.svg`, data: Buffer.from(item.svg.includes('xmlns=') ? item.svg : item.svg.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"')).toString('base64') })
+          : await downloadAsset(project, item.src, name);
+        saved.push(r.path);
+        return r.path;
+      } catch (err) { return `not saved: ${err.message}`; }
+    };
+    if (project && data.logo) data.logo = { ...data.logo, svg: undefined, saved: await save(data.logo, 'logo') };
+    for (const [i, cloud] of (data.logoClouds || []).entries()) {
+      for (const logo of cloud.logos) {
+        if (project) logo.saved = await save(logo, `client-${i + 1}-${store.slugify(logo.name || 'logo').slice(0, 30)}`);
+        delete logo.svg;
+      }
+    }
+    if (!project && data.logoClouds?.length) data.logoCloudsNote = 'Pass "project" to save these logos (SVG markup is left out here).';
+    const content = [{ type: 'text', text: JSON.stringify(data, null, 2) }];
     for (const s of res.screenshots) {
       content.push({ type: 'text', text: s.label });
       content.push({ type: 'image', data: s.data, mimeType: s.mimeType });
     }
-    content.push({ type: 'text', text: 'Next: add_asset the logo and the key images, set_brand from these colors and fonts, and match the button style and voice.' });
+    content.push({ type: 'text', text: project
+      ? `Saved ${saved.length} asset(s) to ${project}. Next: add_asset the key images, set_brand from these colors and fonts, and match the button style, structure and voice.`
+      : 'For a client site: call again with "project" to save its logo and logo strip, then set_brand. For a reference site: borrow structure and rhythm (see "sections"), never its branding.' });
     return { content };
   });
+
+  tool('analyze_social', {
+    description: 'Read a public social profile as a logged-out visitor: Instagram, YouTube, X, TikTok, LinkedIn, Linktree, Behance, etc. Returns name, bio, counts, links, structured data, visible photos (with alt text) and a screenshot. With "project" and save_photos, downloads the profile picture and visible photos into the project. Use it for personal brands, creators and local businesses.',
+    inputSchema: {
+      url: z.string().describe('Profile URL, or "@handle" for Instagram'),
+      project: projectArg.optional(),
+      save_photos: z.number().int().min(0).max(24).optional().describe('How many visible photos to save (needs project). Default 12 when project is set'),
+    },
+  }, async ({ url, project, save_photos }) => {
+    await needApp('analyze_social');
+    const target = /^@/.test(url) ? `https://www.instagram.com/${url.slice(1)}/` : /^https?:\/\//i.test(url) ? url : `https://${url}`;
+    const res = await host.call('analyzeProfile', { url: target }, { timeout: 90000 });
+    const data = res.data;
+    const saved = [];
+    if (project) {
+      const handle = store.slugify(new URL(target).pathname.split('/').filter(Boolean)[0] || new URL(target).hostname).slice(0, 24);
+      if (data.profileImage) { try { saved.push((await downloadAsset(project, data.profileImage, `${handle}-profile`)).path); } catch { /* optional */ } }
+      for (const [i, img] of data.images.slice(0, save_photos ?? 12).entries()) {
+        try { img.saved = (await downloadAsset(project, img.src, `${handle}-${i + 1}`)).path; saved.push(img.saved); } catch (err) { img.saved = `not saved: ${err.message}`; }
+      }
+    }
+    const content = [{ type: 'text', text: JSON.stringify(data, null, 2) }];
+    for (const s of res.screenshots) {
+      content.push({ type: 'text', text: s.label });
+      content.push({ type: 'image', data: s.data, mimeType: s.mimeType });
+    }
+    content.push(...(await sheet(data.images.slice(0, 16).map((img, i) => ({ url: img.src, label: img.alt || `photo ${i + 1}` })))));
+    const hints = [];
+    if (data.loginWall || data.images.length < 4) hints.push('The platform hides most photos from logged-out visitors. Ask the user for a folder of their best photos (Instagram: Settings > Your activity > Download your information), then add_asset with "folder".');
+    if (saved.length) hints.push(`Saved ${saved.length} image(s): ${saved.join(', ')}. Use view_assets to pick the best ones for each slot.`);
+    hints.push('Use only the person\'s own photos to show them. Pull real facts (name, role, team, numbers, links) from the bio and text, and confirm anything unclear with the user.');
+    content.push({ type: 'text', text: hints.join('\n') });
+    return { content };
+  });
+
+  tool('find_images', {
+    description: 'Search free-to-use photos (Wikimedia Commons, Openverse, and Pexels when a key is set) and show them as a numbered contact sheet with license and credit. Then add_asset the ones you pick (url). Use for mood, places, objects and backgrounds, never to stand in for a real person, product or team.',
+    inputSchema: {
+      query: z.string().describe('Specific and visual, e.g. "cricket stadium floodlights night" rather than "sports"'),
+      count: z.number().int().min(1).max(16).optional().describe('Default 8'),
+      orientation: z.enum(['landscape', 'portrait', 'square']).optional(),
+    },
+  }, async ({ query, count = 8, orientation }) => {
+    const { results, notes } = await findImages({ query, count, orientation });
+    const content = [{ type: 'text', text: JSON.stringify({ query, results: results.map(({ thumb, ...r }) => r), notes }, null, 2) }];
+    content.push(...(await sheet(results.map((r) => ({ url: r.thumb || r.url, label: `${r.title} (${r.width}x${r.height})` })))));
+    content.push({ type: 'text', text: results.length
+      ? 'Pick by number, then add_asset with its "url" and a clear filename. Keep the credit when the license needs attribution (CC BY / CC BY-SA): add it to a small credits line in the footer.'
+      : 'Nothing found. Try a more concrete query, or use the brand\'s own images.' });
+    return { content };
+  });
+
+  tool('find_logos', {
+    description: 'Get real company logos for logo strips (customers, partners, sponsors, press, integrations) and save them as project assets. Tries the company\'s own site header (wordmark), then Simple Icons (brand mark). Pass domains for best results. Only use companies that really are clients/partners.',
+    inputSchema: {
+      project: projectArg,
+      companies: z.array(z.object({ name: z.string(), domain: z.string().optional().describe('e.g. "stripe.com"') })).min(1).max(20),
+      color: z.string().optional().describe('Make every logo one color for a calm strip, e.g. "#6b7280" or "#ffffff" on dark'),
+      prefer: z.enum(['wordmark', 'mark']).optional().describe('wordmark (default) for logo strips, mark for small icons like integrations'),
+    },
+  }, async ({ project, companies, color, prefer }) => {
+    const p = store.requireProject(project);
+    const logos = await findLogos(p.slug, companies, { color, prefer });
+    const ok = logos.filter((l) => l.path);
+    const content = [{ type: 'text', text: JSON.stringify(logos.map(({ file, ...l }) => l), null, 2) }];
+    content.push(...(await sheet(ok.map((l) => ({ file: l.file, label: l.name })), 5)));
+    content.push({ type: 'text', text: 'Use as <img src="../assets/…" alt="Company"> with one shared height (e.g. 24-32px, width auto). Check the preview: replace any that look wrong or are white-on-white.' });
+    return { content };
+  });
+
+  tool('view_assets', {
+    description: 'See the images saved in a project as one numbered contact sheet, to choose the best photo for each slot.',
+    inputSchema: { project: projectArg, filter: z.string().optional().describe('Only files whose name contains this, e.g. "ig-" or "logo"') },
+  }, async ({ project, filter }) => {
+    const p = store.requireProject(project);
+    const dir = `${store.projectDir(p.slug)}/assets`;
+    const files = (fs.existsSync(dir) ? fs.readdirSync(dir) : []).filter((f) => IMAGE_FILE.test(f) && (!filter || f.includes(filter))).slice(0, 40);
+    if (!files.length) return text('No images in this project yet. Use analyze_site / analyze_social with "project", find_images, or add_asset.');
+    const list = files.map((f, i) => `${i + 1}. ../assets/${f}`).join('\n');
+    const imgs = await sheet(files.map((f) => ({ file: `${dir}/${f}`, label: f })));
+    return { content: [{ type: 'text', text: list }, ...imgs, ...(imgs.length ? [] : [{ type: 'text', text: '(Open the Blobby app to see previews.)' }])] };
+  });
+
+  tool('get_design_playbook', {
+    description: `How great sites of a given type are built: research steps, section recipe, imagery, typography, color and signature details, plus what makes a page look generic. Call before the brief. Types: ${PLAYBOOK_TYPES.join(', ')}.`,
+    inputSchema: { site_type: z.enum(PLAYBOOK_TYPES).optional() },
+  }, async ({ site_type }) => text(playbook(site_type)));
 
   tool('create_page', {
     description: 'Start a new design page with its brief. Leave "project" empty when the user did not name one: Blobby asks them to pick an existing project or create a new one. Opens the page live in the Blobby app.',
@@ -153,7 +287,7 @@ export function createBlobbyServer(host) {
     return text({
       project: res.project, page: res.page, appOpen: opened, brand: meta.tokens,
       next: defaultBrand
-        ? 'The brand is still the default. Run analyze_site on the client site (if any), then set_brand, then build section by section, then qa_check.'
+        ? 'The brand is still the default. Research first if you haven\'t: analyze_site / analyze_social with this project, view_assets, then set_brand, build section by section with real images and logos, then qa_check.'
         : 'Build section by section with write_html + set_css, then qa_check.',
     });
   });
@@ -198,7 +332,7 @@ export function createBlobbyServer(host) {
   }, async ({ project, page, max_depth }) => text(store.getTree(project, page, { maxDepth: max_depth ?? 8 })));
 
   tool('get_html', {
-    description: 'Get the page body HTML and page CSS, or the outerHTML of one element.',
+    description: 'Get the page body HTML, page CSS and edits_css (per-element rules from canvas edits and update_styles), or the outerHTML of one element.',
     inputSchema: { project: projectArg, page: pageArg, node_id: z.string().optional() },
   }, async ({ project, page, node_id }) => text(store.getPageHtml(project, page, { nodeId: node_id })));
 
@@ -225,10 +359,13 @@ export function createBlobbyServer(host) {
   });
 
   tool('update_styles', {
-    description: 'Set inline styles on elements (camelCase or kebab-case; null removes). Good for one-off tweaks. Prefer set_css for anything reusable.',
-    inputSchema: { project: projectArg, page: pageArg, node_ids: z.array(z.string()), styles: z.record(z.string(), z.string().nullable()) },
-  }, async ({ project, page, node_ids, styles }) => {
-    const res = store.updateStyles(project, page, { nodeIds: node_ids, styles });
+    description: 'Style specific elements (camelCase or kebab-case; null removes). Saved as CSS rules on the element\'s id in the stylesheet, never inline. "device" scopes the change: desktop = all sizes (default), tablet = 1023px and down, mobile = 767px and down. For anything reusable, change the classes with set_css instead.',
+    inputSchema: {
+      project: projectArg, page: pageArg, node_ids: z.array(z.string()), styles: z.record(z.string(), z.string().nullable()),
+      device: z.enum(['desktop', 'tablet', 'mobile']).optional(),
+    },
+  }, async ({ project, page, node_ids, styles, device }) => {
+    const res = store.updateStyles(project, page, { nodeIds: node_ids, styles, device });
     notify(store.requireProject(project).slug, page, 'update_styles');
     return text(res);
   });
@@ -308,6 +445,9 @@ export function createBlobbyServer(host) {
     const hard = [...new Set(((css + html).match(/#[0-9a-f]{6}\b|#[0-9a-f]{3}\b/gi) || []).map((c) => c.toLowerCase()))]
       .filter((c) => !tokenColors.has(c) && !['#fff', '#ffffff', '#000', '#000000'].includes(c));
     const brandIssues = hard.length > 5 ? [{ severity: 'warning', rule: 'off-brand-colors', message: `${hard.length} hard-coded colors are not brand tokens (${hard.slice(0, 8).join(', ')}). Use var(--color-…) or add them with set_brand.` }] : [];
+    const inline = (html.match(/<(?!svg|path|g |circle|rect|line|polygon|stop)[a-z][^>]*\sstyle="/gi) || []).length;
+    if (inline > 2) brandIssues.push({ severity: 'warning', rule: 'inline-styles', message: `${inline} elements have inline style="" attributes. Move them into classes with set_css.` });
+    if (!/<img\b|background(-image)?:[^;]*url\(/i.test(css + html)) brandIssues.push({ severity: 'warning', rule: 'no-images', message: 'The page has no images at all. Unless the brief says otherwise, use real photos (analyze_site, analyze_social, find_images).' });
 
     let errors = 0;
     let warnings = 0;
@@ -406,27 +546,26 @@ export function createBlobbyServer(host) {
   // ---------- assets & output ----------
 
   tool('add_asset', {
-    description: 'Add an image/logo/font to the project from a URL, a local file or raw SVG markup. Returns the path to use in HTML (src="../assets/logo.svg") and CSS.',
+    description: 'Add an image/logo/font to the project from a URL, a local file, a whole folder of images (e.g. the user\'s photos) or raw SVG markup. Returns the path to use in HTML (src="../assets/logo.svg") and CSS.',
     inputSchema: {
       project: projectArg,
       url: z.string().optional(),
       file_path: z.string().optional(),
+      folder: z.string().optional().describe('Import every image in this folder (and its subfolders, up to 60 files)'),
       svg: z.string().optional().describe('Raw <svg> markup, e.g. a logo from analyze_site'),
       filename: z.string().optional().describe('Name to save as, e.g. "logo.svg"'),
     },
-  }, async ({ project, url, file_path, svg, filename }) => {
+  }, async ({ project, url, file_path, folder, svg, filename }) => {
+    if (folder) {
+      const files = fs.readdirSync(folder, { recursive: true }).map(String).filter((f) => IMAGE_FILE.test(f)).slice(0, 60);
+      if (!files.length) throw new Error(`No images (jpg, png, webp, gif, svg, avif) in ${folder}. HEIC photos need converting to JPEG first.`);
+      const added = files.map((f) => store.addAsset(project, { sourcePath: `${folder}/${f}`, filename: f.split('/').join('-') }).path);
+      return text({ added, next: 'Call view_assets to see them and pick the strongest photo for each slot.' });
+    }
     if (file_path) return text(store.addAsset(project, { sourcePath: file_path, filename }));
     if (svg) return text(store.addAsset(project, { filename: filename || 'logo.svg', data: Buffer.from(svg).toString('base64') }));
-    if (!url) throw new Error('Pass url, file_path or svg');
-    const res = await fetch(url, { signal: AbortSignal.timeout(20000), headers: { 'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36' } });
-    if (!res.ok) throw new Error(`Download failed: ${res.status}`);
-    const buf = Buffer.from(await res.arrayBuffer());
-    let name = filename || decodeURIComponent(new URL(url).pathname.split('/').pop() || 'asset');
-    if (!/\.\w{2,5}$/.test(name)) {
-      const ext = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/svg+xml': 'svg', 'image/gif': 'gif', 'image/avif': 'avif' }[(res.headers.get('content-type') || '').split(';')[0]];
-      if (ext) name += '.' + ext;
-    }
-    return text(store.addAsset(project, { filename: name, data: buf.toString('base64') }));
+    if (!url) throw new Error('Pass url, file_path, folder or svg');
+    return text(await downloadAsset(project, url, filename));
   });
 
   tool('export_page', {
@@ -447,10 +586,10 @@ export function createBlobbyServer(host) {
   // Prompt for clients that show prompt menus (Claude Desktop "+" menu, etc.).
   server.registerPrompt('design_page', {
     title: 'Design a page in Blobby',
-    description: 'Brief → real brand → build → QA loop',
+    description: 'Research → brief → real brand → build → QA loop',
     argsSchema: { request: z.string().describe('What to design, e.g. "Landing page for acme.com focused on subscriptions"') },
   }, ({ request }) => ({
-    messages: [{ role: 'user', content: { type: 'text', text: `${request}\n\nUse Blobby and follow its workflow fully: understand → analyze_site (if there's a site) → create_page with a complete brief → set_brand → build section by section → qa_check loop until it passes and every must-have is met → report.` } }],
+    messages: [{ role: 'user', content: { type: 'text', text: `${request}\n\nUse Blobby and follow its workflow fully: understand → get_design_playbook → research (analyze_site for their site, analyze_social for their profiles, 2-3 reference sites, view_assets) → create_page with a complete brief incl. art_direction and imagery → set_brand → build section by section with real photos and real logos → qa_check loop until it passes and every must-have is met → report.` } }],
   }));
 
   server.registerPrompt('apply_feedback', {

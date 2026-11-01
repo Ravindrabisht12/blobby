@@ -7,8 +7,12 @@
 //   }
 // `scale` shrinks captured images (e.g. 0.7) so they stay inside what AI clients accept.
 
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { DEVICES } from './preview.js';
-import { siteProbe, qaProbe } from './probes.js';
+import { siteProbe, qaProbe, profileProbe } from './probes.js';
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const MAX_IMAGE_SIDE = 7800;
@@ -97,6 +101,36 @@ export function createRenderTasks(driver, { pageUrl }) {
     return { data, screenshots };
   }
 
+  // Opens a public profile page (Instagram, X, YouTube, Linktree, …) as a logged-out visitor.
+  async function analyzeProfile({ url }) {
+    const desktopUA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36';
+    const win = await driver.open(url, { width: 1280, height: 900, scale: 1000 / 1280, isolated: true, userAgent: desktopUA });
+    try {
+      await wait(2500);
+      await win.evaluate('(async () => { for (const y of [600, 1200, 0]) { scrollTo(0, y); await new Promise(r => setTimeout(r, 500)); } })()');
+      const data = await win.evaluate(`(${profileProbe.toString()})()`);
+      const shot = await win.capture({ width: 1280, height: 900 });
+      return { data, screenshots: [{ label: 'Profile, first screen', ...shot }] };
+    } finally { win.close(); }
+  }
+
+  // One numbered grid image of many pictures (local files or URLs), so the AI can pick between them.
+  async function contactSheet({ items, columns = 4 }) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'blobby-sheet-'));
+    const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const src = (it) => (it.file ? pathToFileURL(it.file).href : it.url);
+    const cells = items.map((it, i) => `<figure><div><img src="${esc(src(it))}"></div><figcaption><b>${i + 1}</b> ${esc(it.label || '')}</figcaption></figure>`).join('');
+    const html = `<!doctype html><meta charset="utf-8"><style>body{margin:0;padding:16px;font:13px/1.3 system-ui,sans-serif;background:#fff;color:#191919}main{display:grid;grid-template-columns:repeat(${columns},minmax(0,1fr));gap:14px}figure{margin:0;min-width:0}div{height:200px;background:#f0efed;border-radius:6px;display:grid;place-items:center;overflow:hidden}img{max-width:100%;max-height:200px;object-fit:contain}figcaption{margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}b{display:inline-block;min-width:20px;padding:1px 5px;margin-right:4px;border-radius:4px;background:#e33f52;color:#fff;text-align:center}</style><main>${cells}</main>`;
+    const file = path.join(dir, 'sheet.html');
+    fs.writeFileSync(file, html);
+    const handle = await driver.open(pathToFileURL(file).href, { width: 1000, height: 600 });
+    try {
+      await handle.evaluate(SETTLE);
+      const { shot } = await captureFull(handle, 1000, 600, 1, { maxHeight: 4000 });
+      return shot;
+    } finally { handle.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+  }
+
   // Crop of one element, for feedback pins created in the web app. rect is in page pixels.
   async function elementShot({ project, page, device = 'desktop', rect }) {
     const d = DEVICES[device];
@@ -111,5 +145,5 @@ export function createRenderTasks(driver, { pageUrl }) {
     } finally { handle.close(); }
   }
 
-  return { screenshot, qa, thumbnail, analyzeSite, elementShot };
+  return { screenshot, qa, thumbnail, analyzeSite, analyzeProfile, contactSheet, elementShot };
 }

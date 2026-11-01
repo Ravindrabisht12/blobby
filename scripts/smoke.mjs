@@ -28,6 +28,15 @@ await call('set_css', { project: 'acme', page: 'landing', css: '.hero{min-height
 const { t } = await call('get_tree', { project: 'acme', page: 'landing' });
 const h1 = t.match(/h1 #(\w+)/)[1];
 await call('set_text', { project: 'acme', page: 'landing', node_id: h1, text: 'Ship 10x faster' });
+const btn = t.match(/a\.btn #(\w+)/)[1];
+await call('update_styles', { project: 'acme', page: 'landing', node_ids: [btn], styles: { padding: '18px 28px' }, device: 'mobile' });
+const { t: html } = await call('get_html', { project: 'acme', page: 'landing' });
+if (/style=/.test(JSON.parse(html).html) || !/@media \(max-width: 767px\)/.test(JSON.parse(html).edits_css)) throw new Error('update_styles should write a mobile CSS rule, not an inline style');
+await call('get_design_playbook', { site_type: 'personal-brand' });
+if (process.env.NETWORK) {
+  await call('find_logos', { project: 'acme', companies: [{ name: 'Stripe', domain: 'stripe.com' }, { name: 'Shopify' }] });
+  await call('find_images', { query: 'coffee beans roasting', count: 3 });
+}
 await call('get_feedback', {});
 await call('export_page', { project: 'acme', page: 'landing' });
 await client.close();

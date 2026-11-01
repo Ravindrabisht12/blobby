@@ -2,7 +2,8 @@
 //
 // Everything lives in plain folders so projects are portable and diffable:
 //   ~/Blobby/<project>/project.json      name, site, brand tokens
-//   ~/Blobby/<project>/pages/<page>.html full HTML documents (the source of truth)
+//   ~/Blobby/<project>/pages/<page>.html full HTML documents (the source of truth). Style changes made
+//                                        on the canvas live in <style id="blobby-edits">, never inline
 //   ~/Blobby/<project>/assets/           images, fonts, logos
 //   ~/Blobby/<project>/feedback.json     comments pinned to elements
 //   ~/Blobby/<project>/.history/<page>/  snapshots before every change (undo)
@@ -250,6 +251,8 @@ function applyHead(doc, meta, title) {
   // Page CSS always comes last so it can override tokens and base.
   const css = ensure('style#blobby-css', () => { const s = doc.createElement('style'); s.id = 'blobby-css'; s.textContent = ''; return s; });
   head.appendChild(css);
+  const edits = head.querySelector('style#blobby-edits');
+  if (edits) head.appendChild(edits);
 }
 
 function assignIds(root) {
@@ -288,6 +291,7 @@ function mutatePage(projectSlug, pageSlug, fn, { snapshot: snap = true } = {}) {
   const doc = loadDoc(projectSlug, pageSlug);
   const result = fn(doc);
   assignIds(doc.body);
+  if (doc.head.querySelector('style#blobby-edits')) writeEdits(doc, readEdits(doc));
   fs.writeFileSync(pageFile(projectSlug, pageSlug), serialize(doc));
   touchProject(projectSlug);
   return result;
@@ -309,6 +313,74 @@ function createPage(projectQuery, { name, html = '', css = '' } = {}) {
   fs.writeFileSync(pageFile(p.slug, slug), serialize(doc));
   touchProject(p.slug);
   return { project: p.slug, page: slug, file: pageFile(p.slug, slug) };
+}
+
+// ---------- design edits ----------
+// Style changes from the canvas and update_styles are saved as CSS rules keyed by the element's
+// id attribute, not as inline styles. They live in <style id="blobby-edits">, whose data-rules
+// attribute holds { desktop, tablet, mobile } -> { id -> { prop: value } }. Desktop rules apply at
+// every size; tablet and mobile ones only at that size and below (like Webflow breakpoints).
+
+const EDIT_MEDIA = { desktop: null, tablet: '(max-width: 1023px)', mobile: '(max-width: 767px)' };
+
+function readEdits(doc) {
+  const raw = doc.head.querySelector('style#blobby-edits')?.getAttribute('data-rules');
+  let parsed = {};
+  try { parsed = JSON.parse(raw || '{}'); } catch { /* rebuilt below */ }
+  return Object.fromEntries(Object.keys(EDIT_MEDIA).map((d) => [d, parsed[d] || {}]));
+}
+
+const idSelector = (id) => (/^[A-Za-z][\w-]*$/.test(id) ? `#${id}` : `[id="${id.replace(/"/g, '\\"')}"]`);
+
+function editsCss(rules) {
+  const blocks = [];
+  for (const [device, media] of Object.entries(EDIT_MEDIA)) {
+    const pad = media ? '  ' : '';
+    const body = Object.entries(rules[device] || {})
+      .filter(([, decl]) => Object.keys(decl).length)
+      .map(([id, decl]) => `${pad}${idSelector(id)} {\n${Object.entries(decl).map(([k, v]) => `${pad}  ${k}: ${v};`).join('\n')}\n${pad}}`)
+      .join('\n');
+    if (body) blocks.push(media ? `@media ${media} {\n${body}\n}` : body);
+  }
+  return blocks.join('\n\n');
+}
+
+// Drops rules for elements that no longer exist, then rewrites the stylesheet (or removes it).
+function writeEdits(doc, rules) {
+  const ids = new Set(Array.from(doc.body.querySelectorAll('[id]')).map((el) => el.getAttribute('id')));
+  for (const device of Object.keys(EDIT_MEDIA)) {
+    for (const [id, decl] of Object.entries(rules[device])) if (!ids.has(id) || !Object.keys(decl).length) delete rules[device][id];
+  }
+  let style = doc.head.querySelector('style#blobby-edits');
+  const css = editsCss(rules);
+  if (!css) { if (style) style.remove(); return; }
+  if (!style) { style = doc.createElement('style'); style.id = 'blobby-edits'; doc.head.appendChild(style); }
+  style.setAttribute('data-rules', JSON.stringify(rules));
+  style.textContent = css;
+}
+
+// Gives an element a readable, unique id (from its class or text) so a CSS rule can target it.
+function ensureElementId(doc, el) {
+  if (el.getAttribute('id')) return el.getAttribute('id');
+  const cls = (el.getAttribute('class') || '').trim().split(/\s+/)[0];
+  const words = (el.textContent || '').trim().split(/\s+/).slice(0, 3).join(' ');
+  let base = slugify(cls || words || el.tagName).slice(0, 32).replace(/-+$/, '');
+  if (!/^[a-z]/.test(base)) base = `${el.tagName.toLowerCase()}-${base}`;
+  let id = base;
+  for (let n = 2; doc.getElementById(id); n++) id = `${base}-${n}`;
+  el.setAttribute('id', id);
+  return id;
+}
+
+const cssProp = (k) => (k.includes('-') || k.startsWith('--') ? k : k.replace(/[A-Z]/g, (m) => '-' + m.toLowerCase()));
+
+// Moves an element's inline style into its desktop rule (inline used to win, so it wins the merge).
+function foldInline(doc, el, rules) {
+  const inline = parseStyle(el.getAttribute('style'));
+  if (!Object.keys(inline).length) return;
+  const id = ensureElementId(doc, el);
+  rules.desktop[id] = { ...(rules.desktop[id] || {}), ...inline };
+  el.removeAttribute('style');
 }
 
 function byId(doc, id) {
@@ -340,6 +412,23 @@ function writeHtml(projectQuery, pageQuery, { html, targetId, position = 'append
       [n, ...n.querySelectorAll(`[${ID_ATTR}]`)].forEach((el) => { if (inUse.has(el.getAttribute(ID_ATTR))) el.removeAttribute(ID_ATTR); });
       assignIds(n);
     }
+    // Same for html ids (e.g. a duplicated element): the copy gets a new id and the same edits.
+    const rules = readEdits(doc);
+    const keepIds = new Set(replaced ? [replaced, ...replaced.querySelectorAll('[id]')].filter((el) => position === 'replace' || el !== replaced).map((el) => el.getAttribute('id')).filter(Boolean) : []);
+    const usedIds = new Set(Array.from(doc.querySelectorAll('[id]')).map((el) => el.getAttribute('id')).filter((id) => !keepIds.has(id)));
+    let copied = false;
+    for (const n of nodes) {
+      if (n.nodeType !== 1) continue;
+      for (const el of [n, ...n.querySelectorAll('[id]')]) {
+        const old = el.getAttribute('id');
+        if (!old || !usedIds.has(old)) { if (old) usedIds.add(old); continue; }
+        let id = old.replace(/-\d+$/, '');
+        for (let k = 2; usedIds.has(id); k++) id = `${old.replace(/-\d+$/, '')}-${k}`;
+        el.setAttribute('id', id);
+        usedIds.add(id);
+        for (const d of Object.keys(EDIT_MEDIA)) if (rules[d][old]) { rules[d][id] = { ...rules[d][old] }; copied = true; }
+      }
+    }
     const ids = nodes.filter((n) => n.nodeType === 1).map((n) => n.getAttribute(ID_ATTR));
     const insert = (where) => nodes.forEach((n) => where(n));
     switch (position) {
@@ -350,6 +439,7 @@ function writeHtml(projectQuery, pageQuery, { html, targetId, position = 'append
       case 'inner': target.innerHTML = ''; insert((n) => target.appendChild(n)); break;
       default: insert((n) => target.appendChild(n));
     }
+    if (copied) writeEdits(doc, rules);
     return { project: p.slug, page: page.slug, insertedIds: ids };
   });
 }
@@ -373,21 +463,26 @@ function parseStyle(str) {
   return out;
 }
 
-function updateStyles(projectQuery, pageQuery, { nodeIds, styles }) {
+// Writes style changes as CSS rules for one breakpoint (see "design edits"). null or '' removes.
+function updateStyles(projectQuery, pageQuery, { nodeIds, styles, device = 'desktop' }) {
   const p = requireProject(projectQuery);
   const page = requirePage(p.slug, pageQuery);
+  if (!(device in EDIT_MEDIA)) throw new Error(`device must be one of ${Object.keys(EDIT_MEDIA).join(', ')}`);
   return mutatePage(p.slug, page.slug, (doc) => {
-    for (const id of nodeIds) {
-      const el = byId(doc, id);
-      const cur = parseStyle(el.getAttribute('style'));
+    const rules = readEdits(doc);
+    const selectors = [];
+    for (const nodeId of nodeIds) {
+      const el = byId(doc, nodeId);
+      foldInline(doc, el, rules);
+      const id = ensureElementId(doc, el);
+      const decl = (rules[device][id] ||= {});
       for (const [k, v] of Object.entries(styles)) {
-        const prop = k.includes('-') || k.startsWith('--') ? k : k.replace(/[A-Z]/g, (m) => '-' + m.toLowerCase());
-        if (v === null || v === '') delete cur[prop]; else cur[prop] = String(v);
+        if (v === null || v === '') delete decl[cssProp(k)]; else decl[cssProp(k)] = String(v);
       }
-      const s = Object.entries(cur).map(([k, v]) => `${k}: ${v}`).join('; ');
-      if (s) el.setAttribute('style', s); else el.removeAttribute('style');
+      selectors.push(idSelector(id));
     }
-    return { updated: nodeIds };
+    writeEdits(doc, rules);
+    return { updated: nodeIds, device, media: EDIT_MEDIA[device] || 'all sizes', selectors };
   });
 }
 
@@ -437,7 +532,8 @@ function getPageHtml(projectQuery, pageQuery, { nodeId } = {}) {
   const doc = loadDoc(p.slug, page.slug);
   if (nodeId) return byId(doc, nodeId).outerHTML;
   const css = doc.head.querySelector('style#blobby-css');
-  return { project: p.slug, page: page.slug, css: css ? css.textContent : '', html: doc.body.innerHTML };
+  const edits = doc.head.querySelector('style#blobby-edits');
+  return { project: p.slug, page: page.slug, css: css ? css.textContent : '', edits_css: edits ? edits.textContent : '', html: doc.body.innerHTML };
 }
 
 // Compact outline so the AI can target elements without reading the whole page.
@@ -667,13 +763,19 @@ function exportPage(projectQuery, pageQuery, { dest, keepIds = false } = {}) {
   const out = dest || path.join(root(), '_exports', `${p.slug}-${page.slug}`);
   fs.mkdirSync(out, { recursive: true });
 
-  // One stylesheet: base + tokens + page css, in the same cascade order as the canvas.
-  const css = ['blobby-base', 'blobby-tokens', 'blobby-css']
+  // Any inline styles left over (older pages, AI-written style="") move into the stylesheet too.
+  const rules = readEdits(doc);
+  doc.body.querySelectorAll('[style]').forEach((el) => { if (!el.closest('svg')) foldInline(doc, el, rules); });
+  writeEdits(doc, rules);
+
+  // One stylesheet: base + tokens + page css + edits, in the same cascade order as the canvas.
+  const css = ['blobby-base', 'blobby-tokens', 'blobby-css', 'blobby-edits']
     .map((id) => doc.head.querySelector(`style#${id}`))
     .filter(Boolean)
     .map((s) => s.textContent.trim())
+    .filter(Boolean)
     .join('\n\n');
-  doc.head.querySelectorAll('style#blobby-base, style#blobby-tokens, style#blobby-css').forEach((s) => s.remove());
+  doc.head.querySelectorAll('style#blobby-base, style#blobby-tokens, style#blobby-css, style#blobby-edits').forEach((s) => s.remove());
   const fonts = doc.head.querySelector('link#blobby-fonts');
   if (fonts) fonts.removeAttribute('id');
   const link = doc.createElement('link');

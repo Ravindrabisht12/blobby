@@ -825,6 +825,14 @@ function setupFrame(board) {
 }
 
 function docOf(device) { return boards.get(device)?.iframe?.contentDocument || null; }
+// Style edits are saved as CSS rules per breakpoint (store.js "design edits"). Desktop rules apply
+// at every size, tablet ones on tablet and mobile, mobile ones on mobile only.
+const SIZES = ['desktop', 'tablet', 'mobile'];
+const inScope = (editDevice, boardDevice) => SIZES.indexOf(boardDevice) >= SIZES.indexOf(editDevice);
+function editRules(device) {
+  try { return JSON.parse(docOf(device)?.getElementById('blobby-edits')?.dataset.rules || '{}'); } catch { return {}; }
+}
+
 function nodeIn(device, id) { return id ? docOf(device)?.querySelector(`[${ID}="${CSS.escape(id)}"]`) : null; }
 function selectedEls(device = state.selDevice) { return state.sel.map((id) => nodeIn(device, id)).filter(Boolean); }
 function selectedEl() { return nodeIn(state.selDevice, primary()); }
@@ -1083,7 +1091,7 @@ function startMove(e, board) {
     drag = null;
     if (!moved) return;
     if (abs) {
-      await run(() => store('updateStyles', state.project, state.page, { nodeIds: [state.sel[0]], styles: { left: els[0].style.left, top: els[0].style.top } }));
+      await run(() => store('updateStyles', state.project, state.page, { nodeIds: [state.sel[0]], styles: { left: els[0].style.left, top: els[0].style.top }, device: board.device }));
     } else if (drop) {
       await run(() => store('moveNodes', state.project, state.page, { nodeIds: orderedSelection(board.device), targetId: drop.id, position: drop.position }));
     }
@@ -1137,7 +1145,7 @@ function startResize(e, board, el, handle) {
     const styles = {};
     if (handle !== 's') styles.width = `${w}px`;
     if (handle !== 'e') styles.height = `${h}px`;
-    await run(() => store('updateStyles', state.project, state.page, { nodeIds: [el.getAttribute(ID)], styles }));
+    await run(() => store('updateStyles', state.project, state.page, { nodeIds: [el.getAttribute(ID)], styles, device: board.device }));
   };
   window.addEventListener('mousemove', onMove);
   window.addEventListener('mouseup', onUp);
@@ -1429,7 +1437,8 @@ function renderInspect() {
   if (!el) return renderPageInfo(box);
 
   const cs = el.ownerDocument.defaultView.getComputedStyle(el);
-  const inl = (p) => el.style.getPropertyValue(p);
+  const rule = (el.id && editRules(state.selDevice)[state.selDevice]?.[el.id]) || {};
+  const inl = (p) => rule[p] || el.style.getPropertyValue(p);
   // Computed sizes come back like 607.188px; show whole pixels unless the value was set by hand.
   const val = (p) => inl(p) || cs.getPropertyValue(p).replace(/(-?\d+\.\d+)px/g, (_, n) => `${Math.round(Number(n))}px`);
   const isSet = (p) => (inl(p) ? ' set' : '');
@@ -1532,7 +1541,7 @@ function renderInspect() {
       <div class="field"><label>Mode</label>${select('position', ['static', 'relative', 'absolute', 'fixed', 'sticky'])}</div>
       ${val('position') !== 'static' ? `<div class="row4">${num('top', 'T')}${num('right', 'R')}${num('bottom', 'B')}${num('left', 'L')}</div>` : ''}
     </div>
-    <p class="hint" style="margin-top:10px">Bold values are set on this element. Use ↑ ↓ in number fields (⇧ for ×10). For bigger changes, leave a comment for your AI.</p>`;
+    <p class="hint" style="margin-top:10px">Bold values are set on this element ${state.selDevice === 'desktop' ? 'for all screen sizes' : `for ${state.selDevice} and smaller`}. Select it on another artboard to style that size. Use ↑ ↓ in number fields (⇧ for ×10). For bigger changes, leave a comment for your AI.</p>`;
 }
 
 async function renderPageInfo(box) {
@@ -1573,6 +1582,7 @@ const pendingStyles = {};
 let styleTimer = null;
 function applyStyle(prop, value, { now = false } = {}) {
   for (const board of boards.values()) {
+    if (!inScope(state.selDevice, board.device)) continue;
     for (const id of state.sel) {
       const el = nodeIn(board.device, id);
       if (el) { if (value === '' || value == null) el.style.removeProperty(prop); else el.style.setProperty(prop, value); }
@@ -1584,7 +1594,7 @@ function applyStyle(prop, value, { now = false } = {}) {
   const flush = async () => {
     const styles = { ...pendingStyles };
     for (const k of Object.keys(pendingStyles)) delete pendingStyles[k];
-    await run(() => store('updateStyles', state.project, state.page, { nodeIds: [...state.sel], styles }));
+    await run(() => store('updateStyles', state.project, state.page, { nodeIds: [...state.sel], styles, device: state.selDevice }));
   };
   if (now) flush(); else styleTimer = setTimeout(flush, 350);
 }
